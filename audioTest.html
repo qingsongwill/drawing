@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H5 音频录制测试</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 28px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 10px;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:active {
+            background: #5568d3;
+            transform: scale(0.98);
+        }
+        
+        .btn-danger {
+            background: #f56565;
+            color: white;
+        }
+        
+        .btn-danger:active {
+            background: #e53e3e;
+            transform: scale(0.98);
+        }
+        
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+        
+        .btn-success:active {
+            background: #38a169;
+            transform: scale(0.98);
+        }
+        
+        .btn:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        
+        .status-info {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+        
+        .status-success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+        
+        .status-warning {
+            background: #feebc8;
+            color: #744210;
+        }
+        
+        .status-error {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+        
+        .recording-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #f56565;
+            animation: pulse 1.5s ease-in-out infinite;
+            margin-right: 8px;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .audio-player {
+            width: 100%;
+            margin-top: 15px;
+            border-radius: 8px;
+        }
+        
+        .timer {
+            text-align: center;
+            font-size: 32px;
+            font-weight: 700;
+            color: #667eea;
+            margin: 20px 0;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .audio-list {
+            margin-top: 20px;
+        }
+        
+        .audio-item {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .audio-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .audio-item-title {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .audio-item-size {
+            font-size: 12px;
+            color: #718096;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 13px;
+            border-radius: 6px;
+            border: none;
+            background: #e53e3e;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🎤 H5 音频录制</h1>
+
+    <!-- 录音控制 -->
+    <div class="card">
+        <h2 style="margin-bottom: 20px; color: #2d3748;">录音控制</h2>
+
+        <div id="status" class="status status-info">
+            准备就绪，点击开始录音
+        </div>
+
+        <div class="timer" id="timer">00:00</div>
+
+        <button id="startBtn" class="btn btn-primary">🎙️ 开始录音</button>
+        <button id="stopBtn" class="btn btn-danger" disabled>⏹️ 停止录音</button>
+        <button id="downloadBtn" class="btn btn-success" disabled>💾 下载录音</button>
+    </div>
+
+    <!-- 录音列表 -->
+    <div class="card">
+        <h2 style="margin-bottom: 20px; color: #2d3748;">录音列表</h2>
+        <div id="audioList" class="audio-list"></div>
+    </div>
+</div>
+
+<script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let audioBlob;
+    let audioUrl;
+    let timerInterval;
+    let startTime;
+    let recordings = [];
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const statusDiv = document.getElementById('status');
+    const timerDiv = document.getElementById('timer');
+    const audioListDiv = document.getElementById('audioList');
+
+    // 开始录音
+    startBtn.addEventListener('click', async () => {
+        try {
+            // 请求麦克风权限
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+
+            // 创建 MediaRecorder
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'audio/webm;codecs=opus'
+            });
+
+            audioChunks = [];
+
+            // 数据可用时收集
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+
+            // 录音停止时处理
+            mediaRecorder.onstop = () => {
+                audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                audioUrl = URL.createObjectURL(audioBlob);
+
+                // 保存到列表
+                const recording = {
+                    id: Date.now(),
+                    url: audioUrl,
+                    blob: audioBlob,
+                    size: audioBlob.size,
+                    date: new Date()
+                };
+                recordings.unshift(recording);
+
+                renderRecordings();
+
+                downloadBtn.disabled = false;
+                updateStatus('录音完成！', 'success');
+
+                // 停止所有音轨
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            // 开始录音
+            mediaRecorder.start();
+            startTime = Date.now();
+            startTimer();
+
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            downloadBtn.disabled = true;
+
+            updateStatus('正在录音中...', 'warning');
+
+        } catch (error) {
+            console.error('录音失败:', error);
+            updateStatus('录音失败: ' + error.message, 'error');
+
+            if (error.name === 'NotAllowedError') {
+                alert('需要麦克风权限才能录音，请在设置中允许');
+            }
+        }
+    });
+
+    // 停止录音
+    stopBtn.addEventListener('click', () => {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+            stopTimer();
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+    });
+
+    // 下载最新录音
+    downloadBtn.addEventListener('click', () => {
+        if (audioUrl) {
+            const a = document.createElement('a');
+            a.href = audioUrl;
+            a.download = `recording_${Date.now()}.webm`;
+            a.click();
+        }
+    });
+
+    // 计时器
+    function startTimer() {
+        timerInterval = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            const minutes = Math.floor(elapsed / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            timerDiv.textContent = `${pad(minutes)}:${pad(seconds)}`;
+        }, 100);
+    }
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+    }
+
+    function pad(num) {
+        return num.toString().padStart(2, '0');
+    }
+
+    // 更新状态
+    function updateStatus(message, type = 'info') {
+        statusDiv.textContent = message;
+        statusDiv.className = `status status-${type}`;
+
+        if (type === 'warning') {
+            statusDiv.innerHTML = '<span class="recording-indicator"></span>' + message;
+        }
+    }
+
+    // 渲染录音列表
+    function renderRecordings() {
+        if (recordings.length === 0) {
+            audioListDiv.innerHTML = '<p style="text-align: center; color: #a0aec0;">暂无录音</p>';
+            return;
+        }
+
+        audioListDiv.innerHTML = recordings.map((rec, index) => `
+            <div class="audio-item">
+                <div class="audio-item-header">
+                    <div>
+                        <div class="audio-item-title">录音 ${recordings.length - index}</div>
+                        <div class="audio-item-size">${formatSize(rec.size)} • ${formatDate(rec.date)}</div>
+                    </div>
+                    <button class="btn-small" onclick="deleteRecording(${rec.id})">删除</button>
+                </div>
+                <audio class="audio-player" controls src="${rec.url}"></audio>
+            </div>
+        `).join('');
+    }
+
+    // 删除录音
+    window.deleteRecording = function(id) {
+        recordings = recordings.filter(rec => rec.id !== id);
+        renderRecordings();
+    };
+
+    // 格式化文件大小
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // 格式化日期
+    function formatDate(date) {
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        return `${hours}:${minutes}`;
+    }
+
+    // 初始化
+    renderRecordings();
+</script>
+</body>
+</html>
